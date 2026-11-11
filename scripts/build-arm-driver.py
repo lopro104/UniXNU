@@ -2,6 +2,7 @@
 """Compile the generic platform expert against the actual source-kernel ABI."""
 import argparse
 import json
+import os
 import tomllib
 from pathlib import Path
 import subprocess
@@ -104,6 +105,11 @@ if component == 'NativeAdreno':
     command += ['-I', str(ROOT / 'kits/ArmSmmu4K'), '-I', str(ROOT / 'kits/AdrenoPM4'),
                 '-I', str(ROOT / 'kits/sheng'), '-I', str(ROOT / 'kits/Sm8550Platform'), '-I', str(ROOT / 'kits/AdrenoFirmware'),
                 '-I', str(ROOT / 'build/sheng-gmu'), '-I', str(ROOT / 'build/adreno740/include')]
+# GIC-400 (GICv2) boards such as MT8167 and BCM2711: CONFIG_XNU_ARMCPU_GICV2=y in the defconfig reaches this script as
+# XNU_ARMCPU_GICV2=1 and builds the GICv2 path of ArmCpu (currently github.com/mouseos/ArmCpu, pinned by the board's
+# feeds.toml). Without it ArmCpu builds unchanged.
+if component == 'ArmCpu' and os.environ.get('XNU_ARMCPU_GICV2') == '1':
+    command += ['-DARMCPU_GICV2=1']
 (out / 'compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
 result = subprocess.run(command, cwd=record['directory'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 (out / 'compile.log').write_text(result.stdout)
