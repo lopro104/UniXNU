@@ -215,6 +215,11 @@ def hardware_properties(entry, handles, base=0):
         if key in STRINGS:
             entry.strings(key)
             properties.append((key, raw))
+        elif key in ('phandle', 'linux,phandle'):
+            # IOKit's AddPHandle fills gIODTPHandles only from AAPL,phandle;
+            # a plain phandle is ignored and interrupt-parent then resolves to
+            # NULL (IODTGetICellCounts data abort at FAR 0).
+            properties.append(('AAPL,phandle', struct.pack('<I', entry.scalar(key))))
         elif key in U32:
             properties.append((key, struct.pack('<I', entry.scalar(key))))
         elif key in U64:
