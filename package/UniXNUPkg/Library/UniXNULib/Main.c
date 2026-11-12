@@ -9,16 +9,35 @@
 
 #include <Protocol/SerialIo.h>
 
-STATIC EFI_SERIAL_IO_PROTOCOL  *mSerial;
+//
+// Every SerialIo instance gets the log: the firmware's UART, and any port an injected driver adds (such as a USB serial
+// device), which is why UniXNURun() looks again once the drivers are loaded.
+//
+#define UNIXNU_LOG_PORTS  8
+STATIC EFI_SERIAL_IO_PROTOCOL  *mSerial[UNIXNU_LOG_PORTS];
+STATIC UINTN                   mSerialCount;
 
 VOID
 UniXNULogInit (
   VOID
   )
 {
-  if (EFI_ERROR (gBS->LocateProtocol (&gEfiSerialIoProtocolGuid, NULL, (VOID **)&mSerial))) {
-    mSerial = NULL;
+  EFI_HANDLE  *Handles;
+  UINTN       Count;
+  UINTN       Index;
+
+  mSerialCount = 0;
+  if (EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol, &gEfiSerialIoProtocolGuid, NULL, &Count, &Handles))) {
+    return;
   }
+
+  for (Index = 0; Index < Count && mSerialCount < UNIXNU_LOG_PORTS; Index++) {
+    if (!EFI_ERROR (gBS->HandleProtocol (Handles[Index], &gEfiSerialIoProtocolGuid, (VOID **)&mSerial[mSerialCount]))) {
+      mSerialCount++;
+    }
+  }
+
+  FreePool (Handles);
 }
 
 VOID
@@ -32,6 +51,7 @@ UniXNULog (
   CHAR8    Line[256];
   UINTN    Prefix;
   UINTN    Size;
+  UINTN    Index;
 
   Prefix = AsciiSPrint (Line, sizeof (Line), "UNIXNU: ");
   VA_START (Args, Format);
@@ -40,9 +60,9 @@ UniXNULog (
   AsciiStrCatS (Line, sizeof (Line), "\r\n");
 
   DEBUG ((PcdGet32 (PcdUniXNUDebugLevel), "%a", Line));
-  if (mSerial != NULL) {
+  for (Index = 0; Index < mSerialCount; Index++) {
     Size = AsciiStrLen (Line);
-    mSerial->Write (mSerial, &Size, Line);
+    mSerial[Index]->Write (mSerial[Index], &Size, Line);
   }
 }
 
@@ -104,6 +124,8 @@ UniXNURun (
   //
   ZeroMem (&Stats, sizeof (Stats));
   UniXNUInjectDrivers (ImageHandle, &Config, &Stats);
+  UniXNULogInit ();
+  UniXNULog ("log: %u serial ports after the drivers", (UINT32)mSerialCount);
   UniXNUInjectAcpi (&Config, &Stats);
 
   UniXNUUiInit (&Config, &Ui);
